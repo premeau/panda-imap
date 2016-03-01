@@ -53,7 +53,8 @@
  * ports (e.g., 993 for IMAP, 995 for POP3) and using TLS exclusively.
  */
 
-#define SSLCIPHERLIST "ALL:!SSLv2:!ADH:!EXP:!LOW"
+// no longer used, see ssl_env.c
+//#define SSLCIPHERLIST "ALL:!SSLv2:!ADH:!EXP:!LOW"
 
 /* SSL I/O stream */
 
@@ -691,6 +692,76 @@ char *ssl_start_tls (char *server)
   return NIL;
 }
 
+/**
+ * Define the SSL Protocol options for next function
+ */
+#define SSL_PROTOCOL_NONE  (0)
+#define SSL_PROTOCOL_SSLV2 (1<<0)
+#define SSL_PROTOCOL_SSLV3 (1<<1)
+#define SSL_PROTOCOL_TLSV1 (1<<2)
+#ifndef OPENSSL_NO_SSL2
+#define SSL_PROTOCOL_ALL   (SSL_PROTOCOL_SSLV2|SSL_PROTOCOL_SSLV3|SSL_PROTOCOL_TLSV1)
+#else
+#define SSL_PROTOCOL_ALL   (SSL_PROTOCOL_SSLV3|SSL_PROTOCOL_TLSV1)
+#endif
+typedef int ssl_proto_t;
+
+/* Supporting function for parse of set ssl-protocol option */
+static const char *
+ssl_cmd_protocol_parse(const char *arg, ssl_proto_t *options)
+{
+    ssl_proto_t thisopt;
+    char *larg = NULL, *w;
+    static char errstr[2048];  /* Not thread safe ! */
+
+    *options = SSL_PROTOCOL_NONE;
+    if (arg == NULL)
+	return NULL;
+
+    larg = alloca(strlen(arg)+1);
+    if (larg == NULL)
+        return ("Not enought memory while parsing SSL protocol option");
+
+    strcpy(larg, arg);
+
+    while ((w = strsep(&larg, " \t")) != NULL) {
+        char action = '\0';
+
+	if (*w == '\0')
+	  continue;
+
+        if ((*w == '+') || (*w == '-'))
+            action = *(w++);
+
+        if (strcasecmp(w, "SSLv2") == 0) {
+#ifdef OPENSSL_NO_SSL2
+            if (action != '-') {
+                return "SSLv2 not supported by this version of OpenSSL";
+            }
+#endif
+            thisopt = SSL_PROTOCOL_SSLV2;
+        } else if (strcasecmp(w, "SSLv3") == 0) {
+            thisopt = SSL_PROTOCOL_SSLV3;
+        } else if (strcasecmp(w, "TLSv1") == 0) {
+            thisopt = SSL_PROTOCOL_TLSV1;
+        } else if (strcasecmp(w, "all") == 0) {
+            thisopt = SSL_PROTOCOL_ALL;
+        } else {
+            snprintf(errstr, sizeof(errstr), "Illegal SSL protocol configured: '%s'", w);
+	     return errstr;
+        }
+
+        if (action == '-')
+            *options &= ~thisopt;
+        else if (action == '+')
+            *options |= thisopt;
+        else
+            *options = thisopt;
+    }
+
+    return NULL;
+}
+
 /* Init server for SSL
  * Accepts: server name
  */
@@ -722,11 +793,34 @@ void ssl_server_init (char *server)
     syslog (LOG_ALERT,"Unable to create SSL context, host=%.80s",
 	    tcp_clienthost ());
   else {			/* set context options */
+    char *s;
+    const char *errstr;
+    ssl_proto_t protocol;
+
     SSL_CTX_set_options (stream->context,SSL_OP_ALL);
+				/* set protocols */
+    if ((s = (char *) mail_parameters (NIL,GET_SSLPROTOCOLS,NIL)) != NULL) {
+      errstr = ssl_cmd_protocol_parse(s, &protocol);
+      if (errstr != NULL || !(protocol & SSL_PROTOCOL_SSLV2)) {
+        SSL_CTX_set_options(stream->context, SSL_OP_NO_SSLv2);
+      }
+
+      if (errstr != NULL || !(protocol & SSL_PROTOCOL_SSLV3)) {
+        SSL_CTX_set_options(stream->context, SSL_OP_NO_SSLv3);
+      }
+
+      if (errstr != NULL || !(protocol & SSL_PROTOCOL_TLSV1)) {
+        SSL_CTX_set_options(stream->context, SSL_OP_NO_TLSv1);
+      }
+    }
+    if (s != NULL && errstr != NULL)
+      syslog (LOG_ALERT,"Unable to set protocol (host=%.80s): %s",
+              tcp_clienthost (), errstr);
 				/* set cipher list */
-    if (!SSL_CTX_set_cipher_list (stream->context,SSLCIPHERLIST))
+    else if ((s = (char *) mail_parameters (NIL,GET_SSLCIPHERLIST,NIL)) != NULL && !SSL_CTX_set_cipher_list (stream->context,s))
       syslog (LOG_ALERT,"Unable to set cipher list %.80s, host=%.80s",
-	      SSLCIPHERLIST,tcp_clienthost ());
+              s,tcp_clienthost ());
+				/* want to send client certificate? */
 				/* load certificate */
     else if (!SSL_CTX_use_certificate_chain_file (stream->context,cert))
       syslog (LOG_ALERT,"Unable to load certificate from %.80s, host=%.80s",

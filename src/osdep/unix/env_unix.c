@@ -73,6 +73,8 @@ static char *blackBoxDir = NIL;	/* black box directory name */
 				/* black box default home directory */
 static char *blackBoxDefaultHome = NIL;
 static char *sslCApath = NIL;	/* non-standard CA path */
+static char *sslProtocols = NIL ; /* list of allowed SSL protocols */
+static char *sslCipherList = NIL; /* list of allowed SSL ciphers */
 static short anonymous = NIL;	/* is anonymous */
 static short blackBox = NIL;	/* is a black box */
 static short closedBox = NIL;	/* is a closed box (uses chroot() jail) */
@@ -345,6 +347,20 @@ void *env_parameters (long function,void *value)
     break;
   case GET_SSLCAPATH:
     ret = (void *) sslCApath;
+    break;
+  case SET_SSLCIPHERLIST:		/* this can be set null */
+    if (sslCipherList) fs_give ((void **) &sslCipherList);
+    sslCipherList = value ? cpystr ((char *) value) : value;
+    break;
+  case GET_SSLCIPHERLIST:
+    ret = (void *) sslCipherList;
+    break;
+  case SET_SSLPROTOCOLS:		/* this can be set null */
+    if (sslProtocols) fs_give ((void **) &sslProtocols);
+    sslProtocols = value ? cpystr ((char *) value) : value;
+    break;
+  case GET_SSLPROTOCOLS:
+    ret = (void *) sslProtocols;
     break;
   case SET_LISTMAXLEVEL:
     list_max_level = (long) value;
@@ -868,6 +884,17 @@ long env_init (char *user,char *home)
     }
     myHomeDir = cpystr (home);	/* set home directory */
   }
+  sslProtocols = cpystr("-ALL +TLSV1"); /* default protocols */
+  sslCipherList = cpystr ("HIGH:!ADH:!EXP:!LOW:!SSLV2:!SSLV3");	/* default cipher list */
+/*
+SSLProtocol -all +TLSV1
+// TODO
+SSLHonorCipherOrder on
+// TODO
+SSLCompression off
+// TODO ?
+SSLCipherSuite ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:ECDH+3DES:DH+3DES:RSA+AESGCM:RSA+AES:RSA+3DES:!aNULL:!MD5:!DSS
+ */
 
   if (allowuserconfig) {	/* allow user config files */
     dorc (strcat (strcpy (tmp,myHomeDir),"/.mminit"),T);
@@ -1765,6 +1792,10 @@ void dorc (char *file,long flag)
 				 */
 	  else if (!compare_cstring (s,"set CA-certificate-path"))
 	    sslCApath = cpystr (k);
+	  else if (!compare_cstring (s,"set ssl-cipher-list"))
+	    sslCipherList = cpystr (k);
+	  else if (!compare_cstring (s,"set ssl-protocols"))
+	    sslProtocols = cpystr (k);
 	  else if (!compare_cstring (s,"set disable-plaintext"))
 	    disablePlaintext = atoi (k);
 	  else if (!compare_cstring (s,"set allowed-login-attempts"))
