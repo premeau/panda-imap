@@ -695,15 +695,34 @@ char *ssl_start_tls (char *server)
 /**
  * Define the SSL Protocol options for next function
  */
-#define SSL_PROTOCOL_NONE  (0)
-#define SSL_PROTOCOL_SSLV2 (1<<0)
-#define SSL_PROTOCOL_SSLV3 (1<<1)
-#define SSL_PROTOCOL_TLSV1 (1<<2)
-#ifndef OPENSSL_NO_SSL2
-#define SSL_PROTOCOL_ALL   (SSL_PROTOCOL_SSLV2|SSL_PROTOCOL_SSLV3|SSL_PROTOCOL_TLSV1)
+#define SSL_PROTOCOL_NONE      (0)
+#ifdef SSL_OP_NO_SSLv2
+#  define SSL_PROTOCOL_SSLV2   (1<<0)
 #else
-#define SSL_PROTOCOL_ALL   (SSL_PROTOCOL_SSLV3|SSL_PROTOCOL_TLSV1)
+#  define SSL_PROTOCOL_SSLV2   0
 #endif
+#ifdef SSL_OP_NO_SSLv3
+#  define SSL_PROTOCOL_SSLV3   (1<<1)
+#else
+#  define SSL_PROTOCOL_SSLV3   0
+#endif
+#ifdef SSL_OP_NO_TLSv1
+#  define SSL_PROTOCOL_TLSV1   (1<<2)
+#else
+#  define SSL_PROTOCOL_TLSV1   0
+#endif
+#ifdef SSL_OP_NO_TLSv1_1
+#  define SSL_PROTOCOL_TLSV1_1 (1<<3)
+#else
+#  define SSL_PROTOCOL_TLSV1_1   0
+#endif
+#ifdef SSL_OP_NO_TLSv1_2
+#  define SSL_PROTOCOL_TLSV1_2 (1<<4)
+#else
+#  define SSL_PROTOCOL_TLSV1_2   0
+#endif
+
+#define SSL_PROTOCOL_ALL   (SSL_PROTOCOL_SSLV3|SSL_PROTOCOL_TLSV1|SSL_PROTOCOL_TLSV1_1|SSL_PROTOCOL_TLSV1_2)
 typedef int ssl_proto_t;
 
 /* Supporting function for parse of set ssl-protocol option */
@@ -741,14 +760,42 @@ ssl_cmd_protocol_parse(const char *arg, ssl_proto_t *options)
 #endif
             thisopt = SSL_PROTOCOL_SSLV2;
         } else if (strcasecmp(w, "SSLv3") == 0) {
+#ifndef SSL_OP_NO_SSLv3
+            if (action != '-') {
+                return "SSLv3 not supported by this version of OpenSSL";
+            }
+#else
             thisopt = SSL_PROTOCOL_SSLV3;
+#endif
         } else if (strcasecmp(w, "TLSv1") == 0) {
+#ifndef SSL_OP_NO_TLSv1
+            if (action != '-') {
+                return "TLSv1 not supported by this version of OpenSSL";
+            }
+#else
             thisopt = SSL_PROTOCOL_TLSV1;
+#endif
+        } else if (strcasecmp(w, "TLSv1.1") == 0) {
+#ifndef SSL_OP_NO_TLSv1_1
+            if (action != '-') {
+                return "TLSv1.1 not supported by this version of OpenSSL";
+            }
+#else
+            thisopt = SSL_PROTOCOL_TLSV1_1;
+#endif
+        } else if (strcasecmp(w, "TLSv1.2") == 0) {
+#ifndef SSL_OP_NO_TLSv1_2
+            if (action != '-') {
+                return "TLSv1.2 not supported by this version of OpenSSL";
+            }
+#else
+            thisopt = SSL_PROTOCOL_TLSV1_2;
+#endif
         } else if (strcasecmp(w, "all") == 0) {
             thisopt = SSL_PROTOCOL_ALL;
         } else {
             snprintf(errstr, sizeof(errstr), "Illegal SSL protocol configured: '%s'", w);
-	     return errstr;
+            return errstr;
         }
 
         if (action == '-')
@@ -801,17 +848,31 @@ void ssl_server_init (char *server)
 				/* set protocols */
     if ((s = (char *) mail_parameters (NIL,GET_SSLPROTOCOLS,NIL)) != NULL) {
       errstr = ssl_cmd_protocol_parse(s, &protocol);
+#ifdef SSL_OP_NO_SSLv2
       if (errstr != NULL || !(protocol & SSL_PROTOCOL_SSLV2)) {
         SSL_CTX_set_options(stream->context, SSL_OP_NO_SSLv2);
       }
-
+#endif
+#ifdef SSL_OP_NO_SSLv3
       if (errstr != NULL || !(protocol & SSL_PROTOCOL_SSLV3)) {
         SSL_CTX_set_options(stream->context, SSL_OP_NO_SSLv3);
       }
-
+#endif
+#ifdef SSL_OP_NO_TLSv1
       if (errstr != NULL || !(protocol & SSL_PROTOCOL_TLSV1)) {
         SSL_CTX_set_options(stream->context, SSL_OP_NO_TLSv1);
       }
+#endif
+#ifdef SSL_OP_NO_TLSv1_1
+      if (errstr != NULL || !(protocol & SSL_PROTOCOL_TLSV1_1)) {
+        SSL_CTX_set_options(stream->context, SSL_OP_NO_TLSv1_1);
+      }
+#endif
+#ifdef SSL_OP_NO_TLSv1_2
+      if (errstr != NULL || !(protocol & SSL_PROTOCOL_TLSV1_2)) {
+        SSL_CTX_set_options(stream->context, SSL_OP_NO_TLSv1_2);
+      }
+#endif
     }
     if (s != NULL && errstr != NULL)
       syslog (LOG_ALERT,"Unable to set protocol (host=%.80s): %s",
