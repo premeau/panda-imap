@@ -75,6 +75,7 @@ static char *blackBoxDefaultHome = NIL;
 static char *sslCApath = NIL;	/* non-standard CA path */
 static char *sslProtocols = NIL ; /* list of allowed SSL protocols */
 static char *sslCipherList = NIL; /* list of allowed SSL ciphers */
+static char *sslDHParams = NIL;	/* specified SSL Diffie-Hellman parameters file, NIL -> don't do DH */
 static short anonymous = NIL;	/* is anonymous */
 static short blackBox = NIL;	/* is a black box */
 static short closedBox = NIL;	/* is a closed box (uses chroot() jail) */
@@ -361,6 +362,13 @@ void *env_parameters (long function,void *value)
     break;
   case GET_SSLPROTOCOLS:
     ret = (void *) sslProtocols;
+    break;
+  case SET_SSLDHPARAMS:       /* this can be set null */
+    if (sslDHParams) fs_give ((void **) &sslDHParams);
+    sslDHParams = value ? cpystr ((char *) value) : value;
+    break;
+  case GET_SSLDHPARAMS:
+    ret = (void *) sslDHParams;
     break;
   case SET_LISTMAXLEVEL:
     list_max_level = (long) value;
@@ -1796,6 +1804,8 @@ void dorc (char *file,long flag)
 	    sslCipherList = cpystr (k);
 	  else if (!compare_cstring (s,"set ssl-protocols"))
 	    sslProtocols = cpystr (k);
+	  else if (!compare_cstring (s,"set ssl-dh-parameters")) /* same use as Sendmail */
+	    sslDHParams = cpystr (k);
 	  else if (!compare_cstring (s,"set disable-plaintext"))
 	    disablePlaintext = atoi (k);
 	  else if (!compare_cstring (s,"set allowed-login-attempts"))
