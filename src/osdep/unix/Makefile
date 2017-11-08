@@ -172,6 +172,10 @@ BUILD=$(MAKE) build EXTRACFLAGS='$(EXTRACFLAGS)'\
  EXTRADRIVERS='$(EXTRADRIVERS)' EXTRAAUTHENTICATORS='$(EXTRAAUTHENTICATORS)'\
  PASSWDTYPE=$(PASSWDTYPE) SSLTYPE=$(SSLTYPE) IP=$(IP)
 
+# Need this for the shared library rule to work correctly
+.SUFFIXES: .o .so
+SOFILES=${BINARIES:.o=.so}
+
 
 # Here if no make argument established
 
@@ -863,17 +867,24 @@ vu2:	# VAX Ultrix 2.3, etc.
 
 # Build it!
 
-build:	clean once $(ARCHIVE)
+build:	clean once all
 
-all:	$(ARCHIVE)
+all:	$(ARCHIVE) `$(CAT) SHLIBNAME`
 
 $(ARCHIVE): $(BINARIES)
 	sh -c '$(RM) $(ARCHIVE) || true'
 	@$(CAT) ./ARCHIVE
 	@$(SH) ./ARCHIVE
 
+`$(CAT) SHLIBNAME`:	$(SOFILES)
+	`$(CAT) CCTYPE` -shared -Wl,-soname,`$(CAT) SHLIBNAME` -o `$(CAT) SHLIBNAME` $(SOFILES) `$(CAT) LDFLAGS`
+	ln -fs `$(CAT) SHLIBNAME` libc-client.so
+
+.c.so:	osdep.h
+	`$(CAT) CCTYPE` `$(CAT) SHLIBFLAGS` -c `$(CAT) CFLAGS` ${@:.so=.c} -o $@
+
 .c.o:
-	`$(CAT) CCTYPE` -c `$(CAT) CFLAGS` $*.c
+	`$(CAT) CCTYPE` `$(CAT) SHLIBFLAGS` -c `$(CAT) CFLAGS` $*.c
 
 
 # Cleanup
@@ -913,8 +924,7 @@ utf8aux.o: mail.h misc.h osdep.h utf8.h
 
 
 # OS-dependent
-
-osdep.o:mail.h misc.h env.h fs.h ftl.h nl.h tcp.h \
+OSDEPS= mail.h misc.h env.h fs.h ftl.h nl.h tcp.h \
 	osdep.h env_unix.h tcp_unix.h \
 	osdep.c env_unix.c fs_unix.c ftl_unix.c nl_unix.c tcp_unix.c ip_unix.c\
 	auths.c crexcl.c flockcyg.c flocklnx.c flocksim.c fsync.c \
@@ -928,12 +938,19 @@ osdep.o:mail.h misc.h env.h fs.h ftl.h nl.h tcp.h \
 	write.c sslstdio.c \
 	strerror.c strpbrk.c strstr.c strtok.c strtoul.c \
 	OSCFLAGS
+
+osdep.o:	$(OSDEPS)
+	@echo ========================================================================
 	@echo Building OS-dependent module
 	@echo If you get No such file error messages for files x509.h, ssl.h,
 	@echo pem.h, buffer.h, bio.h, and crypto.h, that means that OpenSSL
 	@echo is not installed on your system.  Either install OpenSSL first
 	@echo or build with command: make `$(CAT) OSTYPE` SSLTYPE=none
-	`$(CAT) CCTYPE` -c `$(CAT) CFLAGS` `$(CAT) OSCFLAGS` -c osdep.c
+	@echo ========================================================================
+	`$(CAT) CCTYPE` `$(CAT) SHLIBFLAGS` `$(CAT) CFLAGS` `$(CAT) OSCFLAGS` -c osdep.c
+
+osdep.so:	$(OSDEPS)
+	`$(CAT) CCTYPE` `$(CAT) SHLIBFLAGS` `$(CAT) CFLAGS` `cat OSCFLAGS` -c osdep.c -o $@
 
 osdep.c: osdepbas.c osdepckp.c osdeplog.c osdepssl.c
 	$(CAT) osdepbas.c osdepckp.c osdeplog.c osdepssl.c > osdep.c
@@ -998,6 +1015,8 @@ onceenv:
 	$(LN) crx_$(CRXTYPE).c crexcl.c
 	$(LN) ip$(IP)_unix.c ip_unix.c
 	sh -c '(test $(OS) = sc5 -o $(OS) = sco -o ! -f /usr/include/sys/statvfs.h) && echo -DNOFSTATVFS >> OSCFLAGS || fgrep statvfs64 /usr/include/sys/statvfs.h > /dev/null || echo -DNOFSTATVFS64 >> OSCFLAGS'
+	echo "libc-client.so.`grep CCLIENTVERSION mail.h | sed -e's/[^"]\{1,\}"\([0-9]\{1,\}\)"/\1/'`" > SHLIBNAME
+	test -z $(SHLIBFLAGS) && echo "-fPIC -DPIC -D_REENTRANT" > SHLIBFLAGS || echo "$(SHLIBFLAGS)" > SHLIBFLAGS
 
 
 # Password checkers
