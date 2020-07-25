@@ -735,7 +735,20 @@ char *ssl_start_tls (char *server)
 #  define SSL_PROTOCOL_TLSV1_2   0
 #endif
 
+#if OPENSSL_VERSION_NUMBER >= 0x10100000
+#ifdef SSL_OP_NO_TLSv1_3
+#  define SSL_PROTOCOL_TLSV1_3 (1<<5)
+#else
+#  define SSL_PROTOCOL_TLSV1_3   0
+#endif
+#endif
+
+#if OPENSSL_VERSION_NUMBER >= 0x10100000
+#define SSL_PROTOCOL_ALL   (SSL_PROTOCOL_SSLV3|SSL_PROTOCOL_TLSV1|SSL_PROTOCOL_TLSV1_1|SSL_PROTOCOL_TLSV1_2|SSL_PROTOCOL_TLSV1_3)
+#else
 #define SSL_PROTOCOL_ALL   (SSL_PROTOCOL_SSLV3|SSL_PROTOCOL_TLSV1|SSL_PROTOCOL_TLSV1_1|SSL_PROTOCOL_TLSV1_2)
+#endif
+
 typedef int ssl_proto_t;
 
 /* Supporting function for parse of set ssl-protocol option */
@@ -804,6 +817,16 @@ ssl_cmd_protocol_parse(const char *arg, ssl_proto_t *options)
 #else
             thisopt = SSL_PROTOCOL_TLSV1_2;
 #endif
+        } else if (strcasecmp(w, "TLSv1.3") == 0) {
+#if OPENSSL_VERSION_NUMBER >= 0x10100000
+#ifndef SSL_OP_NO_TLSv1_3
+            if (action != '-') {
+                return "TLSv1.3 not supported by this version of OpenSSL";
+            }
+#else
+            thisopt = SSL_PROTOCOL_TLSV1_3;
+#endif
+#endif
         } else if (strcasecmp(w, "all") == 0) {
             thisopt = SSL_PROTOCOL_ALL;
         } else {
@@ -847,9 +870,19 @@ void ssl_server_init (char *server)
     if (stat (key,&sbuf)) strcpy (key,cert);
   }
 				/* create context */
-  if (!(stream->context = SSL_CTX_new (start_tls ?
+  if (!(stream->context = SSL_CTX_new (
+#if OPENSSL_VERSION_NUMBER >= 0x10100000
+				       TLS_server_method ()
+#else
+#if OPENSSL_VERSION_NUMBER >= 0x10000000
+				       SSLv23_server_method ()
+#else
+				start_tls ?
 				       TLSv1_server_method () :
-				       SSLv23_server_method ())))
+				       SSLv23_server_method ()
+#endif
+#endif
+				       )))
     syslog (LOG_ALERT,"Unable to create SSL context, host=%.80s",
 	    tcp_clienthost ());
   else {			/* set context options */
@@ -886,6 +919,13 @@ void ssl_server_init (char *server)
       if (errstr != NULL || !(protocol & SSL_PROTOCOL_TLSV1_2)) {
         SSL_CTX_set_options(stream->context, SSL_OP_NO_TLSv1_2);
       }
+#endif
+#if OPENSSL_VERSION_NUMBER >= 0x10100000
+#ifdef SSL_OP_NO_TLSv1_3
+      if (errstr != NULL || !(protocol & SSL_PROTOCOL_TLSV1_3)) {
+        SSL_CTX_set_options(stream->context, SSL_OP_NO_TLSv1_3);
+      }
+#endif
 #endif
     }
     if (s != NULL && errstr != NULL)
