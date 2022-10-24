@@ -236,9 +236,20 @@ static char *ssl_start_work (SSLSTREAM *stream,char *host,unsigned long flags)
     (sslclientkey_t) mail_parameters (NIL,GET_SSLCLIENTKEY,NIL);
   if (ssl_last_error) fs_give ((void **) &ssl_last_error);
   ssl_last_host = host;
-  if (!(stream->context = SSL_CTX_new ((flags & NET_TLSCLIENT) ?
+  if (!(stream->context = SSL_CTX_new (
+#if OPENSSL_VERSION_NUMBER >= 0x10100000
+				       TLS_client_method ()
+#else
+#if OPENSSL_VERSION_NUMBER >= 0x10000000
+				       SSLv23_client_method ()
+#else
+				(flags & NET_TLSCLIENT) ?
 				       TLSv1_client_method () :
-				       SSLv23_client_method ())))
+				       SSLv23_client_method ()
+#endif
+#endif
+				                                 )))
+
     return "SSL context failed";
   SSL_CTX_set_options (stream->context,0);
 				/* disable certificate validation? */
