@@ -942,8 +942,13 @@ void ssl_server_init (char *server)
       syslog (LOG_ALERT,"Unable to load certificate from %.80s, host=%.80s",
 	      cert,tcp_clienthost ());
 				/* load key */
+#if OPENSSL_VERSION_NUMBER < 0x10002000
     else if (!(SSL_CTX_use_RSAPrivateKey_file (stream->context,key,
 					       SSL_FILETYPE_PEM)))
+#else
+    else if (!(SSL_CTX_use_PrivateKey_file (stream->context,key,
+					       SSL_FILETYPE_PEM)))
+#endif
       syslog (LOG_ALERT,"Unable to load private key from %.80s, host=%.80s",
 	      key,tcp_clienthost ());
 
